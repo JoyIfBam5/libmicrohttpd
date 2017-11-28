@@ -23,6 +23,7 @@ W32VS2017 = w32/VS2017/libmicrohttpd.vcxproj w32/VS2017/libmicrohttpd.vcxproj.fi
 EXTRA_DIST = \
   acinclude.m4 \
   libmicrohttpd.pc.in \
+  rpm/libmicrohttpd.spec.in \
   $(EXTRA_PO_DIST) \
   $(W32COMMON) $(W32VS2013) $(W32VS2015) $(W32VS2017)
 
@@ -111,3 +112,13 @@ update-POTFILES.in:
 	  find '../src/include' ! -name 'include' -prune -name '*.h' ! -name 'mhd_options.h' > POTFILES.in && \
 	  find '../src/microhttpd' ! -name 'microhttpd' -prune \( -name '*.h' -o -name '*.c' \) ! -name 'test_*' >> POTFILES.in && \
 	  echo "@ECHO_T@done." || (rm -f POTFILES.in ; echo "@ECHO_T@failed." && false)
+
+rpm: dist
+	mkdir -p rpm/SOURCES
+	mkdir -p rpm/BUILD
+	mkdir -p rpm/RPMS
+	mkdir -p rpm/SRPMS
+	cp libmicrohttpd-@VERSION@.tar.gz rpm/SOURCES
+	rpmbuild -v -bb rpm/libmicrohttpd.spec
+	rpmbuild -v -ba rpm/libmicrohttpd.spec
+
