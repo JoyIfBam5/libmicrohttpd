@@ -2011,6 +2011,7 @@ doc/Makefile
 doc/doxygen/Makefile
 doc/examples/Makefile
 m4/Makefile
+rpm/libmicrohttpd.spec
 src/Makefile
 src/include/Makefile
 src/microhttpd/Makefile
