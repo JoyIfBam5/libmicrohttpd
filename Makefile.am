@@ -119,6 +119,5 @@ rpm: dist
 	mkdir -p rpm/RPMS
 	mkdir -p rpm/SRPMS
 	cp libmicrohttpd-@VERSION@.tar.gz rpm/SOURCES
-	rpmbuild -v -bb rpm/libmicrohttpd.spec
 	rpmbuild -v -ba rpm/libmicrohttpd.spec
 
