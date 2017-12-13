@@ -2,6 +2,7 @@
 %define name libmicrohttpd
 %define version @VERSION@
 %define buildroot %{_topdir}/%{name}-%{version}-root
+%define _unpackaged_files_terminate_build 0
 
 Name:           %{name}
 Version:        %{version}
