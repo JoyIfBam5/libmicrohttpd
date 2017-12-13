@@ -1095,7 +1095,7 @@ call_handlers (struct MHD_Connection *con,
                bool write_ready,
                bool force_close)
 {
-  int ret;
+  int ret = MHD_NO;
   bool states_info_processed = false;
   /* Fast track flag */
   bool on_fasttrack = (con->state == MHD_CONNECTION_INIT);
