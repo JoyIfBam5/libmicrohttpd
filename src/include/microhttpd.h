@@ -126,7 +126,7 @@ typedef intptr_t ssize_t;
  * Current version of the library.
  * 0x01093001 = 1.9.30-1.
  */
-#define MHD_VERSION 0x00095800
+#define MHD_VERSION 0x00095902
 
 /**
  * MHD-internal return code for "YES".
@@ -212,8 +212,8 @@ typedef SOCKET MHD_socket;
 #elif defined(__clang__) || defined (__GNUC_PATCHLEVEL__)
 /* clang or GCC since 3.0 */
 #define _MHD_GCC_PRAG(x) _Pragma (#x)
-#if __clang_major__+0 >= 5 || \
-  (!defined(__apple_build_version__) && (__clang_major__+0  > 3 || (__clang_major__+0 == 3 && __clang_minor__ >= 3))) || \
+#if (defined(__clang__) && (__clang_major__+0 >= 5 ||			\
+			    (!defined(__apple_build_version__) && (__clang_major__+0  > 3 || (__clang_major__+0 == 3 && __clang_minor__ >= 3))))) || \
   __GNUC__+0 > 4 || (__GNUC__+0 == 4 && __GNUC_MINOR__+0 >= 8)
 /* clang >= 3.3 (or XCode's clang >= 5.0) or
    GCC >= 4.8 */
@@ -222,7 +222,7 @@ typedef SOCKET MHD_socket;
 #else /* older clang or GCC */
 /* clang < 3.3, XCode's clang < 5.0, 3.0 <= GCC < 4.8 */
 #define _MHD_DEPR_MACRO(msg) _MHD_GCC_PRAG(message msg)
-#if (__clang_major__+0  > 2 || (__clang_major__+0 == 2 && __clang_minor__ >= 9)) /* FIXME: clang >= 2.9, earlier versions not tested */
+#if (defined(__clang__) && (__clang_major__+0  > 2 || (__clang_major__+0 == 2 && __clang_minor__ >= 9))) /* FIXME: clang >= 2.9, earlier versions not tested */
 /* clang handles inline pragmas better than GCC */
 #define _MHD_DEPR_IN_MACRO(msg) _MHD_DEPR_MACRO(msg)
 #endif /* clang >= 2.9 */
@@ -1470,14 +1470,18 @@ enum MHD_OPTION
   MHD_OPTION_LISTEN_BACKLOG_SIZE = 28,
 
   /**
-   * If set to 1 - be strict about the protocol (as opposed to as
-   * tolerant as possible).  Specifically, at the moment, this flag
-   * causes MHD to reject HTTP 1.1 connections without a "Host" header.
-   * This is required by the standard, but of course in violation of
-   * the "be as liberal as possible in what you accept" norm.  It is
-   * recommended to set this to 1 if you are testing clients against
-   * MHD, and 0 in production.
-   * This option should be followed by an `int` argument.
+   * If set to 1 - be strict about the protocol.  Use -1 to be
+   * as tolerant as possible.
+   *
+   * Specifically, at the moment, at 1 this flag
+   * causes MHD to reject HTTP 1.1 connections without a "Host" header,
+   * and to disallow spaces in the URL or (at -1) in HTTP header key strings.
+   *
+   * These are required by some versions of the standard, but of
+   * course in violation of the "be as liberal as possible in what you
+   * accept" norm.  It is recommended to set this to 1 if you are
+   * testing clients against MHD, and 0 in production.  This option
+   * should be followed by an `int` argument.
    */
   MHD_OPTION_STRICT_FOR_CLIENT = 29
 };
@@ -2558,10 +2562,10 @@ MHD_suspend_connection (struct MHD_Connection *connection);
  * result in undefined behavior.
  *
  * If you are using this function in ``external'' select mode, you must
- * make sure to run #MHD_run() afterwards (before again calling
- * #MHD_get_fdset(), as otherwise the change may not be reflected in
- * the set returned by #MHD_get_fdset() and you may end up with a
- * connection that is stuck until the next network activity.
+ * make sure to run #MHD_run() and #MHD_get_timeout() afterwards (before 
+ * again calling #MHD_get_fdset()), as otherwise the change may not be
+ * reflected in the set returned by #MHD_get_fdset() and you may end up 
+ * with a connection that is stuck until the next network activity.
  *
  * @param connection the connection to resume
  */

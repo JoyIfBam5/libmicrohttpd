@@ -1,5 +1,5 @@
 # This file is part of libmicrohttpd.
-# (C) 2006-2017 Christian Grothoff (and other contributing authors)
+# (C) 2006-2018 Christian Grothoff (and other contributing authors)
 #
 # libmicrohttpd is free software; you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published
@@ -22,7 +22,7 @@
 #
 AC_PREREQ([2.64])
 LT_PREREQ([2.4.0])
-AC_INIT([GNU Libmicrohttpd],[0.9.58],[libmicrohttpd@gnu.org])
+AC_INIT([GNU Libmicrohttpd],[0.9.59],[libmicrohttpd@gnu.org])
 AM_INIT_AUTOMAKE([silent-rules] [subdir-objects])
 AC_CONFIG_HEADERS([MHD_config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -68,6 +68,22 @@ AC_PROG_CC_STDC
 MHD_SYS_EXT
 LT_INIT([win32-dll])
 LT_LANG([Windows Resource])
+
+# Checks for gettext.
+m4_ifdef([AM_GNU_GETTEXT], [
+  AM_GNU_GETTEXT([external],[need-ngettext])
+  AC_CONFIG_FILES([po/Makefile.in])
+  have_po=yes
+], [
+  have_po=no
+])
+m4_ifdef([AM_GNU_GETTEXT_VERSION], [
+#do not indent here
+AM_GNU_GETTEXT_VERSION([0.18.2])
+])
+AM_CONDITIONAL([HAVE_PO], [ test "$have_po" = yes ])
+
+
 
 # Workaround for libgcrypt
 AS_IF([[test "x$lt_sysroot" != "x" && test "x$SYSROOT" = "x"]], [[SYSROOT="$lt_sysroot"]])
@@ -719,6 +735,8 @@ if test "$enable_epoll" != "no"; then
   fi
 fi
 
+AM_CONDITIONAL([MHD_HAVE_EPOLL], [[test "x$enable_epoll" = xyes]])
+
 if test "x$enable_epoll" = "xyes"; then
   AC_CACHE_CHECK([for epoll_create1()], [mhd_cv_have_epoll_create1], [
     AC_LINK_IFELSE([
@@ -753,6 +771,9 @@ AC_CHECK_HEADER([[search.h]],
   [], [AC_INCLUDES_DEFAULT])
 
 AM_CONDITIONAL([MHD_HAVE_TSEARCH], [[test "x$ac_cv_header_search_h" = xyes && test "x$HAVE_TSEARCH" = "x1" && test "x$REPLACE_TSEARCH" != "x1"]])
+
+AC_CHECK_HEADERS([dlfcn.h],[have_tlsplugin=yes],[have_tlsplugin=no], [AC_INCLUDES_DEFAULT])
+AM_CONDITIONAL([MHD_HAVE_TLS_PLUGIN], [[test "x$have_tlsplugin" = xyes]])
 
 # Check for generic functions
 AC_CHECK_FUNCS([rand random])
@@ -1692,7 +1713,7 @@ AS_IF([test "x$have_gnutls" != "xyes" && test "x$with_gnutls" = "xyes"], [AC_MSG
             gnutls_free(data.data);
           ]])], [[have_gnutls_sni=yes]], [[have_gnutls_sni=no]])
      AC_MSG_RESULT([[$have_gnutls_sni]])
-     AC_CACHE_CHECK([[whether GnuTLS require libgcrypt initialisaion]], [mhd_cv_grypt_required],
+     AC_CACHE_CHECK([[whether GnuTLS require libgcrypt initialisaion]], [mhd_cv_gcrypt_required],
        [
         AC_COMPILE_IFELSE(
           [
@@ -1708,7 +1729,7 @@ choke me now
              ]
            )
           ],
-          [[mhd_cv_grypt_required='no']], [[mhd_cv_grypt_required='yes']]
+          [[mhd_cv_gcrypt_required='no']], [[mhd_cv_gcrypt_required='yes']]
         )
        ]
      )
@@ -1723,7 +1744,7 @@ choke me now
     ]
   )
 
-  AS_IF([[test "x$mhd_cv_grypt_required" = "xyes" && test "x$have_gcrypt" = "xunknown"]],
+  AS_IF([[test "x$mhd_cv_gcrypt_required" = "xyes" && test "x$have_gcrypt" = "xunknown"]],
     [
      AM_PATH_LIBGCRYPT([1.2.2], [have_gcrypt=yes], [have_gcrypt=no])
      AS_IF([[test "x$have_gcrypt" = "xyes"]],
@@ -1744,7 +1765,7 @@ choke me now
   AS_UNSET([[crypt_missing]])
   AS_IF([[test "x$have_gnutls" = "xyes"]],
     [
-     AS_IF([[test "x$mhd_cv_grypt_required" = "xyes" && test "x$have_gcrypt" != "xyes"]],
+     AS_IF([[test "x$mhd_cv_gcrypt_required" = "xyes" && test "x$have_gcrypt" != "xyes"]],
        [
         crypt_missing="required libgcrypt"
         AS_IF([[test "x$enable_https" = "xyes" ]], [AC_MSG_ERROR([[HTTPS support cannot be enabled without $crypt_missing.]])])
@@ -1760,35 +1781,35 @@ choke me now
          [
           AC_DEFINE([[HTTPS_SUPPORT]],[[1]],[Define to 1 if libmicrohttpd is compiled with HTTPS support.])
           enable_https=yes
-          AS_IF([[test "x$mhd_cv_grypt_required" = "xyes"]],
+          AS_IF([[test "x$mhd_cv_gcrypt_required" = "xyes"]],
             [
              MSG_HTTPS="yes (using libgnutls and libgcrypt)"
-             MHD_LIB_CPPFLAGS="$MHD_LIB_CPPFLAGS $LIBGCRYPT_CFLAGS $GNUTLS_CPPFLAGS"
-             MHD_LIB_CFLAGS="$MHD_LIB_CFLAGS $LIBGCRYPT_CFLAGS $GNUTLS_CFLAGS"
-             MHD_LIB_LDFLAGS="$MHD_LIB_LDFLAGS $GNUTLS_LDFLAGS"
-             MHD_LIBDEPS="$GNUTLS_LIBS $LIBGCRYPT_LIBS $MHD_LIBDEPS"
-             AC_DEFINE([[MHD_HTTPS_REQUIRE_GRYPT]], [[1]], [Define to `1' if HTTPS require initialisation of libgcrypt])
+	     MHD_TLS_LIB_CPPFLAGS="$LIBGCRYPT_CFLAGS $GNUTLS_CPPFLAGS"
+             MHD_TLS_LIB_CFLAGS="$LIBGCRYPT_CFLAGS $GNUTLS_CFLAGS"
+             MHD_TLS_LIB_LDFLAGS="$GNUTLS_LDFLAGS"
+             MHD_TLS_LIBDEPS="$GNUTLS_LIBS $LIBGCRYPT_LIBS"
+             AC_DEFINE([[MHD_HTTPS_REQUIRE_GCRYPT]], [[1]], [Define to `1' if HTTPS require initialisation of libgcrypt])
             ],
             [
              MSG_HTTPS="yes (using libgnutls)"
              AS_UNSET([LIBGCRYPT_CFLAGS])
              AS_UNSET([LIBGCRYPT_LIBS])
-             MHD_LIB_CPPFLAGS="$MHD_LIB_CPPFLAGS $GNUTLS_CPPFLAGS"
-             MHD_LIB_CFLAGS="$MHD_LIB_CFLAGS $GNUTLS_CFLAGS"
-             MHD_LIB_LDFLAGS="$MHD_LIB_LDFLAGS $GNUTLS_LDFLAGS"
-             MHD_LIBDEPS="$GNUTLS_LIBS $MHD_LIBDEPS"
+             MHD_TLS_LIB_CPPFLAGS="$GNUTLS_CPPFLAGS"
+             MHD_TLS_LIB_CFLAGS="$GNUTLS_CFLAGS"
+             MHD_TLS_LIB_LDFLAGS="$GNUTLS_LDFLAGS"
+             MHD_TLS_LIBDEPS="$GNUTLS_LIBS"
             ]
           )
           AS_IF([[ test "x$have_gnutls_pkgcfg" = "xyes" ]],
             [ # remove GnuTLS from private libs in .pc file as it defined in Requires.private
               MHD_REQ_PRIVATE='gnutls'
-              AS_IF([[test "x$mhd_cv_grypt_required" = "xyes"]],
+              AS_IF([[test "x$mhd_cv_gcrypt_required" = "xyes"]],
                 [[MHD_LIBDEPS_PKGCFG="$LIBGCRYPT_LIBS $MHD_LIBDEPS_PKGCFG"]]
               )
             ],
             [
               MHD_REQ_PRIVATE=''
-              AS_IF([[test "x$mhd_cv_grypt_required" = "xyes"]],
+              AS_IF([[test "x$mhd_cv_gcrypt_required" = "xyes"]],
                 [[MHD_LIBDEPS_PKGCFG="$LIBGCRYPT_LIBS $MHD_LIBDEPS_PKGCFG"]]
               )
               MHD_LIBDEPS_PKGCFG="$GNUTLS_LIBS $MHD_LIBDEPS_PKGCFG"
@@ -1818,7 +1839,7 @@ AC_MSG_RESULT([$MSG_HTTPS])
 AM_CONDITIONAL([HAVE_GNUTLS], [[test "x$have_gnutls" = "xyes"]])
 AM_CONDITIONAL([HAVE_GNUTLS_SNI], [[test "x$have_gnutls_sni" = "xyes"]])
 AM_CONDITIONAL([ENABLE_HTTPS], [test "x$enable_https" = "xyes"])
-AM_CONDITIONAL([HTTPS_REQUIRE_GRYPT], [[test "x$enable_https" = "xyes" && test "x$mhd_cv_grypt_required" = "xyes"]])
+AM_CONDITIONAL([HTTPS_REQUIRE_GCRYPT], [[test "x$enable_https" = "xyes" && test "x$mhd_cv_gcrypt_required" = "xyes"]])
 AC_SUBST([GNUTLS_CPPFLAGS])
 AC_SUBST([GNUTLS_CFLAGS])
 AC_SUBST([GNUTLS_LDFLAGS])
@@ -1990,6 +2011,10 @@ AC_SUBST(MHD_LIB_CPPFLAGS)
 AC_SUBST(MHD_LIB_CFLAGS)
 AC_SUBST(MHD_LIB_LDFLAGS)
 AC_SUBST(MHD_LIBDEPS)
+AC_SUBST(MHD_TLS_LIB_CPPFLAGS)
+AC_SUBST(MHD_TLS_LIB_CFLAGS)
+AC_SUBST(MHD_TLS_LIB_LDFLAGS)
+AC_SUBST(MHD_TLS_LIBDEPS)
 
 # for pkg-config
 AC_SUBST([MHD_REQ_PRIVATE])
@@ -2003,9 +2028,15 @@ AC_SUBST(LDFLAGS)
 AC_SUBST([ac_configure_args])
 AC_SUBST([EMPTY_VAR], [[]])
 
+# We define the paths here, because MinGW/GCC expands paths
+# passed through the command line ("-DDIR=..."). This would
+# lead to hard-coded paths ("C:\mingw\mingw\bin...") that do
+# not contain the actual installation.
+AC_DEFINE_DIR([MHD_PLUGIN_INSTALL_PREFIX], [libdir/libmicrohttpd], [tls plugins])
+
+
 AC_CONFIG_FILES([libmicrohttpd.pc
 w32/common/microhttpd_dll_res_vc.rc
-po/configure.acT:po/configure.ac.in
 Makefile
 contrib/Makefile
 doc/Makefile
@@ -2016,22 +2047,12 @@ m4/Makefile
 rpm/libmicrohttpd.spec
 src/Makefile
 src/include/Makefile
+src/lib/Makefile
 src/microhttpd/Makefile
 src/examples/Makefile
 src/testcurl/Makefile
 src/testcurl/https/Makefile
 src/testzzuf/Makefile])
-AC_CONFIG_COMMANDS([po/configargs.stamp], [
-  $as_echo "$ac_configure_args" > "$ac_tmp/configargs.stamp" || AC_MSG_ERROR([[cannot create file $ac_tmp/configargs.stamp]])
-  AS_IF([[cmp -s "po/configargs.stamp" "$ac_tmp/configargs.stamp" >/dev/null 2>&1]],
-    [AC_MSG_NOTICE([[po/configargs.stamp is unchanged]])],
-    [
-      rm -f po/configargs.stamp
-      mv "$ac_tmp/configargs.stamp" po/configargs.stamp || AC_MSG_ERROR([[cannot create file $ac_tmp/configargs.stamp]])
-      AC_MSG_NOTICE([[po/configargs.stamp is updated]])
-    ]
-  )
-], [ac_configure_args="$ac_configure_args"])
 AC_OUTPUT
 
 # Finally: summary
@@ -2055,6 +2076,7 @@ AC_MSG_NOTICE([GNU libmicrohttpd ${PACKAGE_VERSION} Configuration Summary:
   Use thread names:  ${enable_thread_names}
   Use debug asserts: ${enable_asserts}
   Messages:          ${enable_messages}
+  Gettext:           ${have_po}
   Basic auth.:       ${enable_bauth}
   Digest auth.:      ${enable_dauth}
   HTTP "Upgrade":    ${enable_httpupgrade}

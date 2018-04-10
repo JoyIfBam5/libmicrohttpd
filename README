@@ -7,11 +7,16 @@ is also supported).  GNU libmicrohttpd only implements the HTTP 1.1
 protocol.  The main application must still provide the application
 logic to generate the content.
 
+GNU libmicrohttpd is dual-licensed under the GNU Lesser General Public
+License (LGPLv3+) and the eCos License.  See COPYING for details.
+
 
 Installation
 ============
 
-If you are using Subversion, run "autoreconf -fi" to create configure.
+See INSTALL for generic installation instructions.
+
+If you are using Git, run "autoreconf -fi" to create configure.
 
 In order to run the testcases, you need a recent version of libcurl.
 libcurl is not required if you just want to install the library.
@@ -72,3 +77,13 @@ In particular, the following functions are not covered by 'make check':
 - parse_options (daemon.c)
 - MHD_set_panic_func (daemon.c)
 - MHD_get_version (daemon.c)
+
+
+Note that the working library is in src/microhttpd/ with the API in
+src/include/microhttpd.h.  An *experimental* (read: not yet working
+at all) newer implementation is in src/lib/, with the new API in
+src/include/microhttpd2.h.  The experimental code will need MUCH
+more testing and development, you are strongly advised to stick
+to microhttpd.h unless you are a MHD developer!
+
+
