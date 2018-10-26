@@ -1,3 +1,31 @@
+Sat Oct 20 12:44:16 CEST 2018
+	In thread-per-connection mode, signal main thread for
+	thread termination for instant clean-up and application
+	notification about closed connections. -CG
+
+Tue Oct 16 20:43:41 CEST 2018
+	Add MHD_RF_HTTP_VERSION_1_0_RESPONSE option to make MHD
+	act more like an HTTP/1.0 server. -GH
+
+Fri Oct  5 18:44:45 CEST 2018
+	MHD_add_response_header() now prevents applications from
+	setting a "Transfer-Encoding" header to values other than
+	"identity" or "chunked" as other transfer encodings are
+	not supported by MHD. (Note that usually MHD will pick the
+	transfer encoding correctly automatically, but applications
+	can use the header to force a particular behavior.)
+	Fixing #5411 (never set Content-length if Transfer-Encoding
+	is given). -CG
+
+Sat Jul 14 11:42:15 CEST 2018
+	Add MHD_OPTION_GNUTLS_PSK_CRED_HANDLER to allow use of PSK with
+	TLS connections. -CG/TM
+
+Sat Jul 14 11:03:37 CEST 2018
+	Integrate patch for checking digest authentication based on
+	a digest, allowing servers to store passwords only hashed.
+	Adding new function MHD_digest_auth_check_digest(). -CG/DB
+
 Sat Mar 10 12:15:35 CET 2018
 	Upgrade to gettext-0.19.8.1. Switching to more canonical
 	gettext integration. -CG

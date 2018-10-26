@@ -565,7 +565,6 @@ MHD_init_daemon_certificate (struct MHD_Daemon *daemon)
   return -1;
 }
 
-
 /**
  * Initialize security aspects of the HTTPS daemon
  *
@@ -582,6 +581,11 @@ MHD_TLS_init (struct MHD_Daemon *daemon)
           gnutls_certificate_allocate_credentials (&daemon->x509_cred))
         return GNUTLS_E_MEMORY_ERROR;
       return MHD_init_daemon_certificate (daemon);
+    case GNUTLS_CRD_PSK:
+      if (0 !=
+          gnutls_psk_allocate_server_credentials (&daemon->psk_cred))
+        return GNUTLS_E_MEMORY_ERROR;
+      return 0;
     default:
 #ifdef HAVE_MESSAGES
       MHD_DLOG (daemon,
@@ -2093,6 +2097,14 @@ exit:
        * To avoid data races, do not close socket here. Daemon will
        * use more connections only after cleanup anyway. */
     }
+  if ( (MHD_ITC_IS_VALID_(daemon->itc)) &&
+       (! MHD_itc_activate_ (daemon->itc, "t")) )
+    {
+#ifdef HAVE_MESSAGES
+      MHD_DLOG (daemon,
+                _("Failed to signal thread termination via inter-thread communication channel."));
+#endif
+    }
   return (MHD_THRD_RTRN_TYPE_) 0;
 }
 
@@ -2135,7 +2147,68 @@ MHD_tls_push_func_(gnutls_transport_ptr_t trnsp,
   return MHD_send_ ((MHD_socket)(intptr_t)(trnsp), data, data_size);
 }
 #endif /* MHD_TLSLIB_DONT_SUPPRESS_SIGPIPE */
+
+
+/**
+ * Function called by GNUtls to obtain the PSK for a given session.
+ *
+ * @param session the session to lookup PSK for
+ * @param username username to lookup PSK for
+ * @param key[out] where to write PSK
+ * @return 0 on success, -1 on error
+ */
+static int
+psk_gnutls_adapter (gnutls_session_t session,
+		    const char *username,
+		    gnutls_datum_t *key)
+{
+  struct MHD_Connection *connection;
+  struct MHD_Daemon *daemon;
+  void *app_psk;
+  size_t app_psk_size;
+
+  connection = gnutls_session_get_ptr (session);
+  if (NULL == connection)
+  {
+#ifdef HAVE_MESSAGES
+    /* Cannot use our logger, we don't even have "daemon" */
+    MHD_PANIC (_("Internal server error. This should be impossible.\n"));
+#endif
+    return -1;
+  }
+  daemon = connection->daemon;
+  if (NULL == daemon->cred_callback)
+  {
+#ifdef HAVE_MESSAGES
+    MHD_DLOG (daemon,
+	      _("PSK not supported by this server.\n"));
+#endif
+    return -1;
+  }
+  if (0 != daemon->cred_callback (daemon->cred_callback_cls,
+				  connection,
+				  username,
+				  &app_psk,
+				  &app_psk_size))
+    return -1;
+  if (NULL == (key->data = gnutls_malloc (app_psk_size)))
+    {
+#ifdef HAVE_MESSAGES
+      MHD_DLOG (daemon,
+		_("PSK authentication failed: gnutls_malloc failed to allocate memory\n"));
+#endif
+      free (app_psk);
+      return -1;
+    }
+  key->size = app_psk_size;
+  memcpy (key->data,
+	  app_psk,
+	  app_psk_size);
+  free (app_psk);
+  return 0;
+}
 #endif /* HTTPS_SUPPORT */
+
 
 /**
  * Add another client connection to the set of connections
@@ -2365,6 +2438,8 @@ internal_add_connection (struct MHD_Daemon *daemon,
                   );
       gnutls_priority_set (connection->tls_session,
 			   daemon->priority_cache);
+      gnutls_session_set_ptr (connection->tls_session,
+			      connection);
       switch (daemon->cred_type)
         {
           /* set needed credentials for certificate authentication. */
@@ -2372,6 +2447,13 @@ internal_add_connection (struct MHD_Daemon *daemon,
           gnutls_credentials_set (connection->tls_session,
 				  GNUTLS_CRD_CERTIFICATE,
 				  daemon->x509_cred);
+	  break;
+        case GNUTLS_CRD_PSK:
+          gnutls_credentials_set (connection->tls_session,
+                                  GNUTLS_CRD_PSK,
+                                  daemon->psk_cred);
+          gnutls_psk_set_server_credentials_function (daemon->psk_cred,
+                                                      &psk_gnutls_adapter);
           break;
         default:
 #ifdef HAVE_MESSAGES
@@ -2392,12 +2474,15 @@ internal_add_connection (struct MHD_Daemon *daemon,
  	  return MHD_NO;
         }
 #if (GNUTLS_VERSION_NUMBER+0 >= 0x030109) && !defined(_WIN64)
-      gnutls_transport_set_int (connection->tls_session, (int)(client_socket));
+      gnutls_transport_set_int (connection->tls_session,
+				(int)(client_socket));
 #else  /* GnuTLS before 3.1.9 or Win x64 */
-      gnutls_transport_set_ptr (connection->tls_session, (gnutls_transport_ptr_t)(intptr_t)(client_socket));
+      gnutls_transport_set_ptr (connection->tls_session,
+				(gnutls_transport_ptr_t)(intptr_t)(client_socket));
 #endif /* GnuTLS before 3.1.9 */
 #ifdef MHD_TLSLIB_NEED_PUSH_FUNC
-      gnutls_transport_set_push_function (connection->tls_session, MHD_tls_push_func_);
+      gnutls_transport_set_push_function (connection->tls_session,
+					  MHD_tls_push_func_);
 #endif /* MHD_TLSLIB_NEED_PUSH_FUNC */
       if (daemon->https_mem_trust)
 	  gnutls_certificate_server_set_request (connection->tls_session,
@@ -2407,7 +2492,6 @@ internal_add_connection (struct MHD_Daemon *daemon,
       goto cleanup;
 #endif /* ! HTTPS_SUPPORT */
     }
-
 
   MHD_mutex_lock_chk_ (&daemon->cleanup_connection_mutex);
   /* Firm check under lock. */
@@ -3198,10 +3282,11 @@ MHD_get_timeout (struct MHD_Daemon *daemon,
   else
     {
       const time_t second_left = earliest_deadline - now;
-      if (second_left > ULLONG_MAX / 1000) /* Ignore compiler warning: 'second_left' is always positive. */
+
+      if (((unsigned long long)second_left) > ULLONG_MAX / 1000)
         *timeout = ULLONG_MAX;
       else
-        *timeout = 1000LL * second_left;
+        *timeout = 1000LLU * (unsigned long long) second_left;
   }
   return MHD_YES;
 }
@@ -3847,6 +3932,8 @@ MHD_poll (struct MHD_Daemon *daemon,
   return MHD_poll_listen_socket (daemon,
                                  may_block);
 #else
+  (void) daemon;
+  (void) may_block;
   return MHD_NO;
 #endif
 }
@@ -3884,29 +3971,24 @@ is_urh_ready(struct MHD_UpgradeResponseHandle * const urh)
        (0 == urh->in_buffer_used) &&
        (0 == urh->out_buffer_used) )
     return false;
-
   if (connection->daemon->shutdown)
     return true;
-
   if ( ( (0 != (MHD_EPOLL_STATE_READ_READY & urh->app.celi)) ||
          (connection->tls_read_ready) ) &&
        (urh->in_buffer_used < urh->in_buffer_size) )
     return true;
-
   if ( (0 != (MHD_EPOLL_STATE_READ_READY & urh->mhd.celi)) &&
        (urh->out_buffer_used < urh->out_buffer_size) )
     return true;
-
   if ( (0 != (MHD_EPOLL_STATE_WRITE_READY & urh->app.celi)) &&
        (urh->out_buffer_used > 0) )
     return true;
-
   if ( (0 != (MHD_EPOLL_STATE_WRITE_READY & urh->mhd.celi)) &&
          (urh->in_buffer_used > 0) )
     return true;
-
   return false;
 }
+
 
 /**
  * Do epoll()-based processing for TLS connections that have been
@@ -4017,10 +4099,12 @@ run_epoll_for_upgrade (struct MHD_Daemon *daemon)
 }
 #endif /* HTTPS_SUPPORT && UPGRADE_SUPPORT */
 
+
 /**
  * Pointer-marker to distinguish ITC slot in epoll sets.
  */
 static const char * const epoll_itc_marker = "itc_marker";
+
 
 /**
  * Do epoll()-based processing (this function is allowed to
@@ -4426,8 +4510,8 @@ static MHD_THRD_RTRN_TYPE_ MHD_THRD_CALL_SPEC_
 MHD_polling_thread (void *cls)
 {
   struct MHD_Daemon *daemon = cls;
-  MHD_thread_init_(&(daemon->pid));
 
+  MHD_thread_init_(&(daemon->pid));
   while (! daemon->shutdown)
     {
       if (0 != (daemon->options & MHD_USE_POLL))
@@ -5070,6 +5154,7 @@ parse_options_va (struct MHD_Daemon *daemon,
 		case MHD_OPTION_URI_LOG_CALLBACK:
 		case MHD_OPTION_EXTERNAL_LOGGER:
 		case MHD_OPTION_UNESCAPE_CALLBACK:
+		case MHD_OPTION_GNUTLS_PSK_CRED_HANDLER:
 		  if (MHD_YES != parse_options (daemon,
 						servaddr,
 						opt,
@@ -5100,11 +5185,20 @@ parse_options_va (struct MHD_Daemon *daemon,
           daemon->unescape_callback_cls = va_arg (ap,
                                                   void *);
           break;
+#ifdef HTTPS_SUPPORT
+        case MHD_OPTION_GNUTLS_PSK_CRED_HANDLER:
+          daemon->cred_callback = va_arg (ap,
+                                          MHD_PskServerCredentialsCallback);
+	  daemon->cred_callback_cls = va_arg (ap,
+					      void *);
+          break;
+#endif /* HTTPS_SUPPORT */
         default:
 #ifdef HAVE_MESSAGES
           if ( ( (opt >= MHD_OPTION_HTTPS_MEM_KEY) &&
                  (opt <= MHD_OPTION_HTTPS_PRIORITIES) ) ||
-               (opt == MHD_OPTION_HTTPS_MEM_TRUST))
+               (opt == MHD_OPTION_HTTPS_MEM_TRUST) ||
+			   (opt == MHD_OPTION_GNUTLS_PSK_CRED_HANDLER) )
             {
               MHD_DLOG (daemon,
 			_("MHD HTTPS option %d passed to MHD compiled without HTTPS support\n"),
@@ -5758,7 +5852,7 @@ MHD_start_daemon_va (unsigned int flags,
         if (0 != setsockopt (listen_fd,
                              IPPROTO_TCP,
                              TCP_FASTOPEN,
-                             &daemon->fastopen_queue_size,
+                             (const void*)&daemon->fastopen_queue_size,
                              sizeof (daemon->fastopen_queue_size)))
         {
 #ifdef HAVE_MESSAGES
@@ -6419,6 +6513,8 @@ MHD_stop_daemon (struct MHD_Daemon *daemon)
           gnutls_priority_deinit (daemon->priority_cache);
           if (daemon->x509_cred)
             gnutls_certificate_free_credentials (daemon->x509_cred);
+          if (daemon->psk_cred)
+              gnutls_psk_free_server_credentials (daemon->psk_cred);
         }
 #endif /* HTTPS_SUPPORT */
 

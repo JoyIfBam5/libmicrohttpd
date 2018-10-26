@@ -23,6 +23,7 @@
 AC_PREREQ([2.64])
 LT_PREREQ([2.4.0])
 AC_INIT([GNU Libmicrohttpd],[0.9.59],[libmicrohttpd@gnu.org])
+AC_CONFIG_AUX_DIR([build-aux])
 AM_INIT_AUTOMAKE([silent-rules] [subdir-objects])
 AC_CONFIG_HEADERS([MHD_config.h])
 AC_CONFIG_MACRO_DIR([m4])
@@ -35,28 +36,22 @@ AC_SUBST(LIB_VERSION_REVISION)
 AC_SUBST(LIB_VERSION_AGE)
 
 AC_MSG_CHECKING([[whether z/OS special settings are required]])
-if test `uname -s` = "OS/390"
-then
+AS_IF([test `uname -s` = "OS/390"],
+[
 # configure binaries for z/OS
-  if test -z "$CC"
-  then
-    CC=`pwd`"/contrib/xcc"
-    chmod +x $CC || true
-  fi
-  if test -z "$CPP"
-  then
-    CPP="c89 -E"
-  fi
-  if test -z "$CXXCPP"
-  then
-    CXXCPP="c++ -E -+"
-  fi
+  AS_IF([test -z "$CC"],
+        [CC=`pwd`"/contrib/xcc"
+         chmod +x $CC || true])
+  AS_IF([test -z "$CPP"],
+        CPP="c89 -E")
+  AS_IF([test -z "$CXXCPP"],
+        CXXCPP="c++ -E -+")
   AC_MSG_RESULT([[yes]])
 #  _CCC_CCMODE=1
 #  _C89_CCMODE=1
-else
+],
   AC_MSG_RESULT([[no]])
-fi
+)
 
 # Checks for programs.
 AC_PROG_AWK
@@ -427,15 +422,14 @@ AS_IF([[test "x$with_threads" = "xposix"]],
         )
     ]
   )
-if test "x$USE_THREADS" = "xposix"; then
-  CC="$PTHREAD_CC"
+AS_IF([test "x$USE_THREADS" = "xposix"],
+  [CC="$PTHREAD_CC"
   AC_DEFINE([MHD_USE_POSIX_THREADS],[1],[define to use pthreads])
   MHD_LIB_CFLAGS="$MHD_LIB_CFLAGS $PTHREAD_CFLAGS"
   MHD_LIBDEPS="$PTHREAD_LIBS $MHD_LIBDEPS"
   MHD_LIBDEPS_PKGCFG="$PTHREAD_LIBS $MHD_LIBDEPS_PKGCFG"
 elif test "x$USE_THREADS" = "xw32"; then
-  AC_DEFINE([MHD_USE_W32_THREADS],[1],[define to use W32 threads])
-fi
+  AC_DEFINE([MHD_USE_W32_THREADS],[1],[define to use W32 threads])])
 AM_CONDITIONAL([USE_POSIX_THREADS], [test "x$USE_THREADS" = "xposix"])
 AM_CONDITIONAL([USE_W32_THREADS], [test "x$USE_THREADS" = "xw32"])
 AC_MSG_RESULT([[$USE_THREADS]])
@@ -444,7 +438,7 @@ AC_ARG_ENABLE([[thread-names]],
    [AS_HELP_STRING([--disable-thread-names [auto] ],[do not set names on MHD generated threads])],
    [], [enable_thread_names='auto'])
 
-if test "x$enable_thread_names" != "xno" && test "x$USE_THREADS" = "xposix"; then
+AS_IF([test "x$enable_thread_names" != "xno" && test "x$USE_THREADS" = "xposix"],[
   # Check for thread name function
   HAVE_THREAD_NAME_FUNC="no"
   SAVE_LIBS="$LIBS"
@@ -600,10 +594,9 @@ AC_INCLUDES_DEFAULT
 
   LIBS="$SAVE_LIBS"
   CFLAGS="$SAVE_CFLAGS"
-fi
+])
 
-AS_IF(
-  [[test "x$enable_thread_names" != "xno"]],
+AS_IF([[test "x$enable_thread_names" != "xno"]],
   [
     AC_MSG_CHECKING([[whether to enable thread names]])
     AC_COMPILE_IFELSE(
@@ -690,31 +683,25 @@ AC_ARG_ENABLE([[poll]],
     [enable_poll='auto']
   )
 
-if test "$enable_poll" != "no"; then
-  if test "$os_is_native_w32" != "yes"; then
-    AC_CHECK_HEADERS([poll.h],
-      [
-        AC_CHECK_FUNCS([poll], [have_poll='yes'], [have_poll='no'])
-      ], [], [AC_INCLUDES_DEFAULT])
-  else
-    AC_MSG_CHECKING([for WSAPoll()])
-    AC_LINK_IFELSE([
-      AC_LANG_PROGRAM([[
+AS_IF([test "$enable_poll" != "no"],
+       [AS_IF([test "$os_is_native_w32" != "yes"],
+             AC_CHECK_HEADERS([poll.h],
+                [AC_CHECK_FUNCS([poll], [have_poll='yes'], [have_poll='no'])],
+		[],
+		[AC_INCLUDES_DEFAULT]),
+             [AC_MSG_CHECKING([for WSAPoll()])
+              AC_LINK_IFELSE([AC_LANG_PROGRAM([[
 #include <winsock2.h>
-       ]], [[
+              ]],[[
 WSAPOLLFD fda[2];
 WSAPoll(fda, 2, 0);]])],
-        [
-          have_poll='yes'
-          AC_DEFINE([HAVE_POLL],[1])
-        ], [have_poll='no'])
-    AC_MSG_RESULT([$have_poll])
-  fi
-  if test "$enable_poll" = "yes" && test "$have_poll" != "yes"; then
-    AC_MSG_ERROR([[Support for poll was explicitly requested but cannot be enabled on this platform.]])
-  fi
-  enable_poll="$have_poll"
-fi
+              [have_poll='yes'
+              AC_DEFINE([HAVE_POLL],[1])
+              ],[have_poll='no'])
+              AC_MSG_RESULT([$have_poll])])
+       AS_IF([test "$enable_poll" = "yes" && test "$have_poll" != "yes"],
+             AC_MSG_ERROR([[Support for poll was explicitly requested but cannot be enabled on this platform.]]))
+       enable_poll="$have_poll"])
 
 AC_ARG_ENABLE([[epoll]],
   [AS_HELP_STRING([[--enable-epoll[=ARG]]], [enable epoll support (yes, no, auto) [auto]])],
@@ -722,23 +709,20 @@ AC_ARG_ENABLE([[epoll]],
     [enable_epoll='auto']
   )
 
-if test "$enable_epoll" != "no"; then
-  AX_HAVE_EPOLL
-  if test "${ax_cv_have_epoll}" = "yes"; then
-    AC_DEFINE([[EPOLL_SUPPORT]],[[1]],[Define to 1 to enable epoll support])
-    enable_epoll='yes'
-  else
-    if test "$enable_epoll" = "yes"; then
-      AC_MSG_ERROR([[Support for epoll was explicitly requested but cannot be enabled on this platform.]])
-    fi
-    enable_epoll='no'
-  fi
-fi
+AS_IF([test "$enable_epoll" != "no"],
+      [AX_HAVE_EPOLL
+       AS_IF([test "${ax_cv_have_epoll}" = "yes"],
+          [AC_DEFINE([[EPOLL_SUPPORT]],[[1]],[Define to 1 to enable epoll support])
+           enable_epoll='yes'],
+       [AS_IF([test "$enable_epoll" = "yes"],
+              AC_MSG_ERROR([[Support for epoll was explicitly requested but cannot be enabled on this platform.]]))
+        enable_epoll='no'])])
 
 AM_CONDITIONAL([MHD_HAVE_EPOLL], [[test "x$enable_epoll" = xyes]])
 
-if test "x$enable_epoll" = "xyes"; then
-  AC_CACHE_CHECK([for epoll_create1()], [mhd_cv_have_epoll_create1], [
+AS_IF([test "x$enable_epoll" = "xyes"],
+  AC_CACHE_CHECK([for epoll_create1()],
+                 [mhd_cv_have_epoll_create1], [
     AC_LINK_IFELSE([
       AC_LANG_PROGRAM([[
 #include <sys/epoll.h>
@@ -748,8 +732,7 @@ fd = epoll_create1(EPOLL_CLOEXEC);]])],
       [mhd_cv_have_epoll_create1=yes],
       [mhd_cv_have_epoll_create1=no])])
   AS_IF([test "x$mhd_cv_have_epoll_create1" = "xyes"],[
-    AC_DEFINE([[HAVE_EPOLL_CREATE1]], [[1]], [Define if you have epoll_create1 function.])])
-fi
+    AC_DEFINE([[HAVE_EPOLL_CREATE1]], [[1]], [Define if you have epoll_create1 function.])]))
 
 # Check for headers that are ALWAYS required
 AC_CHECK_HEADERS([fcntl.h math.h errno.h limits.h stdio.h locale.h sys/stat.h sys/types.h], [], [AC_MSG_ERROR([Compiling libmicrohttpd requires standard UNIX headers files])], [AC_INCLUDES_DEFAULT])
@@ -1520,6 +1503,8 @@ AC_ARG_WITH([[gnutls]],
         AC_MSG_RESULT([[-I$with_gnutls/include -L$with_gnutls/lib -lgnutls]])
         SAVE_LDFLAGS="$LDFLAGS"
         SAVE_CPPFLAGS="$CPPFLAGS"
+        SAVE_CFLAGS="$CFLAGS"
+        SAVE_LIBS="$LIBS"
         LDFLAGS="-L$with_gnutls/lib $LDFLAGS"
         CPPFLAGS="-I$with_gnutls/include $CPPFLAGS"
         have_gnutls_pkgcfg=no
@@ -1532,8 +1517,10 @@ AC_ARG_WITH([[gnutls]],
                 have_gnutls=yes
               ])], [], [AC_INCLUDES_DEFAULT])
         AS_IF([test "x$have_gnutls" != "xyes"], [AC_MSG_ERROR([can't find usable libgnutls at specified prefix $with_gnutls])])
-        LDFLAGS="$SAVE_LDFLAGS"
         CPPFLAGS="$SAVE_CPPFLAGS"
+        CFLAGS="$SAVE_CFLAGS"
+        LDFLAGS="$SAVE_LDFLAGS"
+        LIBS="$SAVE_LIBS"
         ;;
     esac
    ],
@@ -1679,7 +1666,8 @@ AS_IF([test "x$with_gnutls" != "xno" && test "x$have_gnutls" != "xyes"],
    )
   ]
 )
-AS_IF([test "x$have_gnutls" != "xyes" && test "x$with_gnutls" = "xyes"], [AC_MSG_ERROR([[can't find usable libgnutls]])])
+AS_IF([test "x$have_gnutls" != "xyes" && test "x$with_gnutls" = "xyes"],
+      [AC_MSG_ERROR([[can't find usable libgnutls]])])
 #
 # End of large unindented block
 #
@@ -2033,6 +2021,16 @@ AC_SUBST([EMPTY_VAR], [[]])
 # lead to hard-coded paths ("C:\mingw\mingw\bin...") that do
 # not contain the actual installation.
 AC_DEFINE_DIR([MHD_PLUGIN_INSTALL_PREFIX], [libdir/libmicrohttpd], [tls plugins])
+
+
+# should experimental code be compiled (code that may not yet compile)?
+AC_MSG_CHECKING(whether to compile experimental code)
+AC_ARG_ENABLE([experimental],
+   [AS_HELP_STRING([--enable-experimental], [enable compiling experimental code])],
+   [enable_experimental=${enableval}],
+   [enable_experimental=no])
+AC_MSG_RESULT($enable_experimental)
+AM_CONDITIONAL([HAVE_EXPERIMENTAL], [test "x$enable_experimental" = "xyes"])
 
 
 AC_CONFIG_FILES([libmicrohttpd.pc
